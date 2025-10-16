@@ -4,15 +4,18 @@ from pymavlink import mavutil
 def main():
     conn = my_mavlink_connection('udp:127.0.0.1:14550')
 
+    conn.wait_heartbeat()
+    
     # Choose the 3–4 kinds you want to capture
     # wanted_types = ['HEARTBEAT', 'ATTITUDE', 'GPS_RAW_INT', 'SYS_STATUS']
     wanted_types = sorted(n.replace('MAVLINK_MSG_ID_', '')
                         for n in dir(mavutil.mavlink)
                         if n.startswith('MAVLINK_MSG_ID_'))
+    
     try:
         count = 0
         # Keep pulling only the wanted types until we've seen each at least once
-        while count < 100:
+        while count < 15:
             # Single call that filters to just the types we care about
             count += 1
             print(f"Call recv_match time no: {count}")
