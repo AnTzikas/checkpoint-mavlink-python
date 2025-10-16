@@ -2,6 +2,30 @@ from pymavlink import mavutil
 from .logging import RecvMatchLog
 from datetime import datetime, timezone
 from pathlib import Path
+import functools
+
+
+# --- add this tiny proxy somewhere (same file is fine) ---
+class _MavProxy:
+    def __init__(self, mav, on_command_long=None):
+        self._mav = mav
+        self._on_command_long = on_command_long
+
+    def command_long_send(self, *args, **kwargs):
+        # test hook (log/print/modify as you like)
+        if self._on_command_long:
+            try:
+                if not self._on_command_long(*args, **kwargs):
+                    #print"Skipping send\n")
+                    return
+            except Exception:
+                pass
+        
+        #print"Pass Through command_long_send")
+        return self._mav.command_long_send(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._mav, name)
 
 
 """
@@ -13,7 +37,8 @@ class MavlinkConnection:
     """Thin wrapper around a pymavlink mavfile instance."""
     def __init__(self, inner, hook=None):
         self._inner = inner
-        
+        self._replay_mode = False
+
         #* Check/Create folder for logs
         log_dir = Path("logfiles")
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -21,13 +46,19 @@ class MavlinkConnection:
         #Create logfile for recv_log
         recv_log_path = log_dir / f"recv_match_{0}.tlog"
         self._recv_log = RecvMatchLog(recv_log_path) if recv_log_path else None
+
+        self._mav_proxy = _MavProxy(inner.mav, on_command_long=self._on_command_long)
     
+    @property
+    def mav(self):
+        # callers keep using: m.mav.command_long_send(...)
+        return self._mav_proxy
 
     def recv_msg(self):
 
         #Call the core method
         msg = self._inner.recv_msg()
-        
+        #print"Call recv_msg")
         #TODO handle logging
         return msg
     
@@ -41,22 +72,21 @@ class MavlinkConnection:
     ):
         
         #* Replay phase: return the next available message from logs
-        if (self._recv_log.replay_buffer is not None):
-            
-            if (self._recv_log.replay_buffer.total == 0):
-                
-                #* There replay mode finished
-                self._recv_log.replay_buffer = None
-                # self._recv_log._fsize = _filesize_now(self._recv_log._f)
-            
-            else:
-                
-                #*Return the next available message form log 
+        # if (self._recv_log.replay_buffer is not None):
+        if (self._replay_mode):
+            try:
                 entry = self._recv_log.replay_buffer.next()
                 return entry.msg
             
+            except StopIteration:    
+                self._recv_log.replay_buffer = None
+                self._replay_mode = False
+            
         #* Check if its need to start the replay mode (restoration process)
         if (self._recv_log.check_for_restore()):
+            
+            #* Set a global as replay mode equal True
+            self._replay_mode = True
 
             #* Read data from the logfile and create the msg list
             self._recv_log.read_data(self._inner.mav)
@@ -73,6 +103,7 @@ class MavlinkConnection:
             
             
         #* call through the default method and add the response to the logs
+        #print"New call")
         msg = self._inner.recv_match(
             condition=condition,
             type=type,
@@ -84,6 +115,15 @@ class MavlinkConnection:
         
         return msg
 
+    def _on_command_long(self, *args, **kwargs):
+        
+        if self._replay_mode or self._recv_log.check_for_restore():
+            self._replay_mode = True
+            #print"Replay Mode skip send long command")
+            return False
+        
+        return True
+    
     def close(self):
         # remove hook if we added one
         # try:
@@ -102,6 +142,20 @@ class MavlinkConnection:
                 pass
     
     def __getattr__(self, name):
+
+        # fetch attribute from the real pymavlink connection
+        target = getattr(self._inner, name)
+        if callable(target) and ("wait_" in name):
+            if (self._recv_log.check_for_restore()):
+            
+                #* Set a global as replay mode equal True
+                self._replay_mode = True
+
+                #* Read data from the logfile and create the msg list
+                self._recv_log.read_data(self._inner.mav)
+            
+            
+            #Create buffer
         # forward attribute/method access (e.g. write, wait_heartbeat, target_system, etc.)
         return getattr(self._inner, name)
 
