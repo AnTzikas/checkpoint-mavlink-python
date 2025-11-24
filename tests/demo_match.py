@@ -1,6 +1,6 @@
-from src.connection import my_mavlink_connection
+from old_src.connection import my_mavlink_connection
 from pymavlink import mavutil
-
+import time
 def main():
     conn = my_mavlink_connection('udp:127.0.0.1:14550')
 
@@ -15,7 +15,7 @@ def main():
     try:
         count = 0
         # Keep pulling only the wanted types until we've seen each at least once
-        while count < 15:
+        while count < 100:
             # Single call that filters to just the types we care about
             count += 1
             print(f"Call recv_match time no: {count}")
@@ -35,7 +35,10 @@ def main():
             except Exception:
                 as_dict = {k: getattr(msg, k) for k in dir(msg) if not k.startswith('_')}
             print(f"{mtype}: {as_dict}")
+
+            # time.sleep(2)
                 
+    
 
     finally:
         conn.close()

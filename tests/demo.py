@@ -1,4 +1,4 @@
-from src.connection import my_mavlink_connection 
+from old_src.connection import my_mavlink_connection 
 from pymavlink import mavutil
 import time, json
 

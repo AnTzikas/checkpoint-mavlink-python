@@ -1,6 +1,6 @@
 import time
 from pymavlink import mavutil
-from src.connection import my_mavlink_connection
+from old_src.connection import my_mavlink_connection
 
 def _result_name(code: int) -> str:
     try:
