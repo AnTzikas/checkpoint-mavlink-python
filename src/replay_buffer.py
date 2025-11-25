@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import List, Union
 from pymavlink.dialects.v20 import ardupilotmega as mavlink2
 
-import constants
+from src import constants
 
 @dataclass(frozen=True)
 class ReplayEntry:

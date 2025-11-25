@@ -3,6 +3,7 @@ import math
 import csv
 from datetime import datetime
 from pymavlink import mavutil
+from src.mavlink_wrapper import mavlink_connection_wrapper
 
 # --- CONFIGURATION ---
 CONNECTION_STRING = 'udpin:localhost:14551'
@@ -16,14 +17,16 @@ ACCEPTANCE_RADIUS = 1.0
 
 # Task 1: Check Battery
 def task_measure_battery(connection, log_data):
+    # Get message but don't block forever, use the wrapper's non-blocking or short timeout
     msg = connection.recv_match(type='SYS_STATUS', blocking=True, timeout=1)
     if msg:
         voltage = msg.voltage_battery / 1000.0
-        print(f"   [Task] Battery: {voltage:.2f}V")
         log_data['battery_volts'] = voltage
+        # CAPTURE DETERMINISTIC TIME
+        # time_boot_ms is strictly from the log during replay
+        log_data['vehicle_time_ms'] = msg.time_boot_ms 
     else:
         log_data['battery_volts'] = 0
-
 # Task 2: Check Orientation (Roll/Pitch)
 def task_measure_attitude(connection, log_data):
     msg = connection.recv_match(type='ATTITUDE', blocking=True, timeout=1)
@@ -106,13 +109,28 @@ def wait_for_arrival(connection, target_lat, target_lon):
 
 def run_mission():
     print("--- CONNECTING ---")
-    master = mavutil.mavlink_connection(CONNECTION_STRING)
+    master = mavlink_connection_wrapper(CONNECTION_STRING)
     master.wait_heartbeat()
     
     print("Requesting Data Stream...")
-    master.mav.request_data_stream_send(
-        master.target_system, master.target_component,
-        mavutil.mavlink.MAV_DATA_STREAM_ALL, 4, 1
+    # master.mav.request_data_stream_send(
+    #     master.target_system, master.target_component,
+    #     mavutil.mavlink.MAV_DATA_STREAM_ALL, 4, 1
+    # )
+    # ---------------------------------------------------------
+    # REPLACEMENT: Request Data using command_long_send (Primitive)
+    # ---------------------------------------------------------
+    print("Requesting GLOBAL_POSITION_INT via Command Long...")
+    
+    # We use command_long_send, which is explicitly in your table
+    master.mav.command_long_send(
+        master.target_system,            # Target System
+        master.target_component,         # Target Component
+        mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, # Command 511
+        0,                               # Confirmation
+        33,                              # Param 1: Message ID (33 = GLOBAL_POSITION_INT)
+        250000,                          # Param 2: Interval in microseconds (250000us = 4Hz)
+        0, 0, 0, 0, 0                    # Param 3-7: Unused
     )
 
     print("Switching to GUIDED & Arming...")

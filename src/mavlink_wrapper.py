@@ -11,10 +11,10 @@ from typing import Optional, Any, List
 from pymavlink import mavutil
 
 # Import infrastructure components
-import constants
-from interaction_journal import InteractionJournal
-import replay_buffer
-from replay_buffer import ReplayEntry, ReplayBuffer
+from src import constants
+from src.interaction_journal import InteractionJournal
+from src import replay_buffer
+from src.replay_buffer import ReplayEntry, ReplayBuffer
 
 # Proxy class for intercepting outgoing commands (e.g., master.mav.command_long_send)
 class _MavSenderProxy:
@@ -32,7 +32,7 @@ class _MavSenderProxy:
             msg = self._wrapper._handle_replay_send(summary)
             
             if msg is not None:
-                print("Replay Mode: return log payload!")
+                # print("Replay Mode: return log payload!")
                 return 
 
         #* Check if a restore happened
@@ -118,7 +118,7 @@ class MavlinkWrapper:
         if not (recv_needs_restore or send_needs_restore):
             return False
 
-        # print(f"[Wrapper] RESTORE DETECTED (Disk > Memory). Ingesting history...")
+        # # print(f"[Wrapper] RESTORE DETECTED (Disk > Memory). Ingesting history...")
 
         # 1. Read only the NEW bytes (Delta)
         new_recv_bytes = self._recv_journal.read_restore_chunk()
@@ -135,7 +135,7 @@ class MavlinkWrapper:
         self._extend_replay_buffer('send', new_send_buf)
         
         self._is_replay_mode = True
-        # print(f"[Wrapper] Replay Mode ENABLED. Pending Recv: {self._recv_buffer.total if self._recv_buffer else 0}")
+        # # print(f"[Wrapper] Replay Mode ENABLED. Pending Recv: {self._recv_buffer.total if self._recv_buffer else 0}")
 
         return True
 
@@ -175,7 +175,7 @@ class MavlinkWrapper:
             msg = self._handle_replay_receive()
 
             if msg is not None:
-                print("Replay Mode: return log payload!")
+                # print("Replay Mode: return log payload!")
                 return msg
 
         #* Check if a restore happened
@@ -193,6 +193,18 @@ class MavlinkWrapper:
 
         return msg
 
+    def wait_hertbeat(self):
+        msg = self._execute_receive_flow(
+            constants.WAIT_HEARTBEAT_ID,
+            "wait_heartbeat"
+        )
+
+        # * If this is a replay mode answer
+        if self._is_replay_mode:
+            self._conn.wait_heartbeat()
+
+        return msg
+    
     def recv_match(
         self,
         condition=None,
@@ -221,7 +233,7 @@ class MavlinkWrapper:
     def _handle_replay_receive(self):
         """Fetches next message from buffer or transitions to Live Mode."""
         if self._recv_buffer is None or self._recv_buffer.is_exhausted:
-            print("[Wrapper] Replay buffer exhausted. Transitioning to LIVE MODE.")
+            # print("[Wrapper] Replay buffer exhausted. Transitioning to LIVE MODE.")
             self._is_replay_mode = False
             return None # Return None to allow loop to retry in live mode
         
@@ -288,8 +300,8 @@ def mavlink_connection_wrapper(*args, **kwargs) -> MavlinkWrapper:
     
     # 2. Define Log Paths (Standardized location)
     # You could assume a 'logs' directory exists or pass it in
-    recv_log = "recv.bin" 
-    send_log = "send.bin"
+    recv_log = "logfiles/recv.bin" 
+    send_log = "logfiles/send.bin"
 
     # 3. Return Wrapper
     return MavlinkWrapper(inner, recv_log, send_log)
