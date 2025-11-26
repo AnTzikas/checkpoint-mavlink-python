@@ -1,21 +1,15 @@
-"""The core Wrapper Layer coordinating logging, replay, and MAVLink interception.
-
-This module implements the fault-tolerance logic defined in Thesis Figure 4.2.
-It acts as a transparent proxy, managing the transition between Replay Mode
-(State Injection/Side-Effect Suppression) and Live Execution (Logging).
-"""
-
 import time
 import struct
 from typing import Optional, Any, List
 from pymavlink import mavutil
+import os 
 
 # Import infrastructure components
 from src import constants
 from src.interaction_journal import InteractionJournal
 from src import replay_buffer
-from src.replay_buffer import ReplayEntry, ReplayBuffer
-
+from src.replay_buffer import ReplayBuffer
+from src.ipc_client import IPCClient
 # Proxy class for intercepting outgoing commands (e.g., master.mav.command_long_send)
 class _MavSenderProxy:
     """
@@ -28,6 +22,9 @@ class _MavSenderProxy:
 
     def _execute_send_flow(self, api_id: int, summary: str, method_name: str, *args, **kwargs):
         
+        # print("[Out] Try to acquire!")
+        self._wrapper._checkpoint_lock.acquire()
+
         if self._wrapper.is_replay_mode:
             msg = self._wrapper._handle_replay_send(summary)
             
@@ -45,6 +42,7 @@ class _MavSenderProxy:
         # Log the interaction
         self._wrapper._log_send_interaction(api_id, summary)
 
+        self._wrapper._checkpoint_lock.release()
 
     def command_long_send(self, target_system, target_component, command, confirmation, p1, p2, p3, p4, p5, p6, p7):
         args_summary = f"CMD_LONG(sys={target_system}, cmd={command}, p1={p1})"
@@ -102,6 +100,7 @@ class MavlinkWrapper:
 
         # 3. Setup the .mav Proxy
         self._mav_proxy = _MavSenderProxy(connection.mav, self)
+        self._checkpoint_lock = IPCClient()
 
         # # 4. Initial State Check
         # #! Checks if logs exist on disk that are larger than our memory state (0).
@@ -168,7 +167,9 @@ class MavlinkWrapper:
 
     def _execute_receive_flow(self, api_id: int, method_name: str, *args, **kwargs):
         
-        #TODO Enter checkpoint-safe region
+        #* Enter checkpoint-safe region
+        # print("[Out] Try to acquire!")
+        self._checkpoint_lock.acquire()
 
         #* Check if reply mode exists
         if self.is_replay_mode:
@@ -191,6 +192,8 @@ class MavlinkWrapper:
         # * Log the interaction
         self._log_receive_interaction(msg, api_id)
 
+        self._checkpoint_lock.release()
+        
         return msg
 
     def wait_hertbeat(self):
@@ -292,16 +295,14 @@ class MavlinkWrapper:
 
 # Factory funciton
 def mavlink_connection_wrapper(*args, **kwargs) -> MavlinkWrapper:
-    """
-    Factory to create a Wrapped connection.
-    """
-    # 1. Create Real Connection
+    
     inner = mavutil.mavlink_connection(*args, **kwargs)
     
-    # 2. Define Log Paths (Standardized location)
-    # You could assume a 'logs' directory exists or pass it in
-    recv_log = "logfiles/recv.bin" 
-    send_log = "logfiles/send.bin"
+    LOG_DIR = os.environ.get("LOG_DIR", "logfiles/log")
+    
+    os.makedirs(LOG_DIR, exist_ok=True)
+    
+    recv_log = f"{LOG_DIR}/recv.bin" 
+    send_log = f"{LOG_DIR}/send.bin"
 
-    # 3. Return Wrapper
     return MavlinkWrapper(inner, recv_log, send_log)
