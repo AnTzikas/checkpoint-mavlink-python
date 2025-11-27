@@ -29,11 +29,14 @@ class _MavSenderProxy:
             msg = self._wrapper._handle_replay_send(summary)
             
             if msg is not None:
-                # print("Replay Mode: return log payload!")
+                print("Replay Mode: return!")
+                
                 return 
+            print("Exit replay mode go to Live.")
 
         #* Check if a restore happened
         if self._wrapper._poll_restore_status():
+            print("Restore detected!")
             return self._execute_send_flow(api_id, summary, method_name, *args, **kwargs)
 
         real_method = getattr(self._real_mav, method_name)
@@ -173,14 +176,17 @@ class MavlinkWrapper:
 
         #* Check if reply mode exists
         if self.is_replay_mode:
+            
             msg = self._handle_replay_receive()
 
             if msg is not None:
                 # print("Replay Mode: return log payload!")
+                # print("Replay Receive")
                 return msg
 
         #* Check if a restore happened
         if self._poll_restore_status():
+            # print("Restore detected")
             return self._execute_receive_flow(api_id, method_name, *args, **kwargs)
 
 
