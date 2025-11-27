@@ -11,7 +11,7 @@ TARGET_ALTITUDE = 15     # Meters
 PATROL_RADIUS = 80       # Meters (Large square)
 SPEED_MPS = 1            # Meters/Second (Slow enough to observe)
 LOITER_TIME = 5.0        # Seconds to hover at corners
-TOTAL_LAPS = 1         
+TOTAL_LAPS = 5         
 CONNECTION_STR = 'udpin:localhost:14551'
 
 # ------------------------------------------------------------------------------
@@ -169,6 +169,8 @@ def run_patrol():
             
             # C. SCAN (Time)
             loiter_deterministic(master, LOITER_TIME)
+            # print("CRASH HERE")
+            # time.sleep(5)
             
         print(f"   [STATUS] Lap {lap+1} Complete. Patrol Count updated.")
         
