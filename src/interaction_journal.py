@@ -2,24 +2,29 @@ import os, sys
 from typing import BinaryIO
 
 class InteractionJournal:
-    """A write-ahead log handler that enforces strict disk synchronization.
-    
-    Maintains an internal cursor (_known_size) to detect discrepancies 
-    between process memory and physical disk state (Checkpoints).
-    """
 
     def __init__(self, file_path: str):
         self._path = file_path
         # Open in Append Binary mode
-        self._file: BinaryIO = open(file_path, "ab", buffering=0)
-        self._file.seek(0)
+        self._file: BinaryIO | None = None
+        self._current_inode: int | None = None
+        self._open_journal()
+    
+    def _open_journal(self):
+        if self._file and not self._file.closed:
+            self._file.close()
         
+        self._file = open(self._path, "ab", buffering=0)
+        self._file.seek(0)
+
+        # Record the Inode. This is our "ID Card" for the file.
+        self._current_inode = os.fstat(self._file.fileno()).st_ino
+
 
     def append_bytes(self, data: bytes) -> None:
         
         try:
             self._file.write(data)
-
             self._file.flush()
             os.fsync(self._file.fileno())
             
@@ -32,24 +37,28 @@ class InteractionJournal:
     def check_restore_needed(self) -> bool:
         
         try:
-            current_disk_size = os.fstat(self._file.fileno()).st_size
-            value = current_disk_size - self._file.tell()
-            # print(f"\nCurrent size={current_disk_size}\nDiff={value}\n")
-            if value < 0:
-                print("[Wrapper] [Interaction Journal] Checkpoint truncated the log go to pos 0.")
-                self._file.seek(0)
+            stat_info = os.stat(self._path)
+            disk_inode = stat_info.st_ino
+            disk_size = stat_info.st_size
+
+            if disk_inode != self._current_inode:
+                # * Checkpoint happened reopen the file
+                print(f"[Wrapper] Log Rotation Detected! (Old Inode: {self._current_inode} -> New: {disk_inode})")
+
+                self._open_journal()
+
+                return disk_size > 0
+            
+            return disk_size > self._file.tell()
             
         except Exception as e:
             error_line = sys.exc_info()[-1].tb_lineno
             print(f"[Logger] Unexpected error: {e} on line: {error_line}")
+            exit(1)
 
-        return current_disk_size > self._file.tell()
+       
 
     def read_restore_chunk(self) -> bytes:
-        """
-        Reads only the NEW bytes (Delta) that appeared since our last write.
-        Updates _known_size to match the new reality.
-        """
 
         try:
             current_disk_size = os.fstat(self._file.fileno()).st_size
