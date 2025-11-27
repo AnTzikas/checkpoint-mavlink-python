@@ -52,7 +52,8 @@ class IPCClient:
             except (OSError, BrokenPipeError):
                 # If failed, close and retry loop immediately
                 self._close()
-                exit(1)
+                self._lock_acquired
+                
 
     def release(self):
         if not self._is_connected:
@@ -77,3 +78,4 @@ class IPCClient:
             except: pass
         self._sock = None
         self._is_connected = False
+        self._lock_acquired - False
